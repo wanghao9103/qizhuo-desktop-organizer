@@ -31,6 +31,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid #63a0ff; outline-
 .empty-folder svg { margin: auto; }
 
 .category-rail { position: fixed; width: 252px; right: 24px; top: 50%; transform: translateY(-50%); border-radius: 18px; padding: 14px; transition: width .22s ease, right .22s ease; }
+.category-rail.top-layout { width: min(960px, calc(100vw - 48px)); left: 50%; right: auto; top: 24px; transform: translateX(-50%); }
+.category-rail.top-layout .category-list { display: flex; gap: 8px; max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; }
+.category-rail.top-layout .category-row { flex: 0 0 142px; height: 58px; grid-template-columns: 22px 1fr auto; }
+.category-rail.top-layout .category-row .open-arrow { display: none; }
+.category-rail.top-layout .add-category { width: 142px; margin-left: auto; }
 .rail-head { height: 36px; padding: 0 3px 0 12px; display: flex; align-items: center; justify-content: space-between; color: rgba(229,237,249,.48); font-size: 12px; }
 .rail-actions { display: flex; align-items: center; }
 .rail-actions .icon-button { width: 30px; height: 30px; }
