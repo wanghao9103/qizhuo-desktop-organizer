@@ -506,6 +506,8 @@ fn start_command_listener(app: tauri::AppHandle) {
 fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
     thread::spawn(move || {
         let mut ignored = false;
+        let mut candidate = false;
+        let mut stable_samples = 0_u8;
         loop {
             thread::sleep(Duration::from_millis(32));
             let Some(window) = app.get_webview_window("main") else {
@@ -527,17 +529,24 @@ fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<Inter
                 .lock()
                 .map(|items| {
                     items.iter().any(|region| {
-                        x >= region.left
-                            && x <= region.left + region.width
-                            && y >= region.top
-                            && y <= region.top + region.height
+                        const PADDING: f64 = 10.0;
+                        x >= region.left - PADDING
+                            && x <= region.left + region.width + PADDING
+                            && y >= region.top - PADDING
+                            && y <= region.top + region.height + PADDING
                     })
                 })
                 .unwrap_or(false);
             let next_ignored = !inside;
-            if next_ignored != ignored {
-                let _ = window.set_ignore_cursor_events(next_ignored);
-                ignored = next_ignored;
+            if next_ignored == candidate {
+                stable_samples = stable_samples.saturating_add(1);
+            } else {
+                candidate = next_ignored;
+                stable_samples = 1;
+            }
+            if stable_samples >= 3 && candidate != ignored {
+                let _ = window.set_ignore_cursor_events(candidate);
+                ignored = candidate;
             }
         }
     });
