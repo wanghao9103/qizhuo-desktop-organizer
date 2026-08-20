@@ -130,6 +130,17 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
+    const frame = requestAnimationFrame(() => {
+      const regions = [...document.querySelectorAll(".folder-panel, .category-rail, .new-folder")].map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      });
+      invoke("set_interactive_regions", { regions }).catch(() => {});
+    });
+    return () => cancelAnimationFrame(frame);
+  });
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return;
     let disposed = false;
     let unlisteners = [];
     Promise.all([
