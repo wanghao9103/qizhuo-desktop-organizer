@@ -90,7 +90,16 @@ function AddCategory({ onClose, onAdd }) {
 }
 
 export function App() {
-  const [categories, setCategories] = useState(initialCategories);
+  const [categories, setCategories] = useState(() => {
+    try {
+      const order = JSON.parse(localStorage.getItem("qizhuo-category-order")) ?? [];
+      return [...initialCategories].sort((a, b) => {
+        const aIndex = order.indexOf(a.id);
+        const bIndex = order.indexOf(b.id);
+        return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
+      });
+    } catch { return initialCategories; }
+  });
   const [activeId, setActiveId] = useState("work");
   const [collapsed, setCollapsed] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -100,6 +109,7 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [railAtTop, setRailAtTop] = useState(() => localStorage.getItem("qizhuo-rail-layout") === "top");
+  const [draggingCategory, setDraggingCategory] = useState(null);
   const folderDrag = useDraggablePosition("qizhuo-folder-position");
   const railDrag = useDraggablePosition("qizhuo-rail-position");
   const isTauri = Boolean(window.__TAURI_INTERNALS__);
@@ -142,7 +152,24 @@ export function App() {
   const displayedColor = normalizedQuery ? "#8fb5ff" : active.color;
   function addCategory(name, color) {
     const next = { id: `custom-${Date.now()}`, name, count: 0, color, icon: FiFolder };
-    setCategories((items) => [...items, next]); setActiveId(next.id); setAdding(false); setCollapsed(false); setNotice(`已创建“${name}”`); window.setTimeout(() => setNotice(""), 2200);
+    setCategories((items) => {
+      const updated = [...items, next];
+      localStorage.setItem("qizhuo-category-order", JSON.stringify(updated.map((item) => item.id)));
+      return updated;
+    }); setActiveId(next.id); setAdding(false); setCollapsed(false); setNotice(`已创建“${name}”`); window.setTimeout(() => setNotice(""), 2200);
+  }
+  function moveCategory(targetId) {
+    if (!draggingCategory || draggingCategory === targetId) return;
+    setCategories((items) => {
+      const from = items.findIndex((item) => item.id === draggingCategory);
+      const to = items.findIndex((item) => item.id === targetId);
+      if (from < 0 || to < 0) return items;
+      const updated = [...items];
+      const [moved] = updated.splice(from, 1);
+      updated.splice(to, 0, moved);
+      localStorage.setItem("qizhuo-category-order", JSON.stringify(updated.map((item) => item.id)));
+      return updated;
+    });
   }
   function toggleRailLayout() {
     const next = !railAtTop;
@@ -170,7 +197,7 @@ export function App() {
       {collapsed ? <button className="edge-tab" onClick={() => setCollapsed(false)} aria-label="展开栖桌"><span>栖桌</span><FiChevronLeft /></button> : <>
         <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={toggleRailLayout} aria-label={railAtTop ? "切换到右侧布局" : "切换到顶部布局"} title={railAtTop ? "切换到右侧" : "切换到顶部"}><FiMove /></button><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
         {searchOpen && <label className="global-search"><FiSearch /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索所有软件" /><button onClick={() => { setQuery(""); setSearchOpen(false); }} aria-label="关闭搜索"><FiX /></button></label>}
-        <div className="category-list">{categories.map(({ id, name, count, color, icon: Icon }) => <button key={id} className={activeId === id ? "category-row active" : "category-row"} onClick={() => setActiveId(id)} style={{ "--accent": color }}><Icon /><span>{name}</span><small>{count}</small><FiChevronLeft className="open-arrow" /></button>)}</div>
+        <div className="category-list">{categories.map(({ id, name, count, color, icon: Icon }) => <button key={id} draggable className={`${activeId === id ? "category-row active" : "category-row"}${draggingCategory === id ? " dragging" : ""}`} onClick={() => setActiveId(id)} onDragStart={(event) => { setDraggingCategory(id); event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); moveCategory(id); setDraggingCategory(null); }} onDragEnd={() => setDraggingCategory(null)} style={{ "--accent": color }}><Icon /><span>{name}</span><small>{count}</small><FiChevronLeft className="open-arrow" /></button>)}</div>
         <button className="add-category" onClick={() => setAdding(true)}><FiPlus /><span>新增分类</span></button>
       </>}
     </aside>
