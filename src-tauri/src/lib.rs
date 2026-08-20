@@ -514,6 +514,11 @@ fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<Inter
         let Ok(scale) = window.scale_factor() else {
             return;
         };
+        let Ok(size) = window.inner_size() else {
+            return;
+        };
+        let logical_width = size.width as f64 / scale;
+        let logical_height = size.height as f64 / scale;
         let mut ignored = false;
         let mut outside_samples = 0_u8;
         loop {
@@ -524,18 +529,25 @@ fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<Inter
             }
             let x = (cursor.x - position.x) as f64 / scale;
             let y = (cursor.y - position.y) as f64 / scale;
-            let inside = regions
-                .lock()
-                .map(|items| {
-                    items.iter().any(|region| {
-                        const PADDING: f64 = 10.0;
-                        x >= region.left - PADDING
-                            && x <= region.left + region.width + PADDING
-                            && y >= region.top - PADDING
-                            && y <= region.top + region.height + PADDING
+            // The collapsed tab always lives at the center of the right edge. Keep a
+            // native fallback hotspot for it so a delayed DOM-region update can never
+            // leave the only expand control behind a click-through window.
+            let inside_edge_tab = x >= logical_width - 64.0
+                && y >= logical_height / 2.0 - 110.0
+                && y <= logical_height / 2.0 + 110.0;
+            let inside = inside_edge_tab
+                || regions
+                    .lock()
+                    .map(|items| {
+                        items.iter().any(|region| {
+                            const PADDING: f64 = 10.0;
+                            x >= region.left - PADDING
+                                && x <= region.left + region.width + PADDING
+                                && y >= region.top - PADDING
+                                && y <= region.top + region.height + PADDING
+                        })
                     })
-                })
-                .unwrap_or(false);
+                    .unwrap_or(false);
             if inside {
                 outside_samples = 0;
                 if ignored {
