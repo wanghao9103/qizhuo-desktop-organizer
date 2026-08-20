@@ -505,20 +505,19 @@ fn start_command_listener(app: tauri::AppHandle) {
 #[cfg(target_os = "windows")]
 fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
     thread::spawn(move || {
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        let Ok(position) = window.outer_position() else {
+            return;
+        };
+        let Ok(scale) = window.scale_factor() else {
+            return;
+        };
         let mut ignored = false;
-        let mut candidate = false;
-        let mut stable_samples = 0_u8;
+        let mut outside_samples = 0_u8;
         loop {
-            thread::sleep(Duration::from_millis(32));
-            let Some(window) = app.get_webview_window("main") else {
-                break;
-            };
-            let Ok(position) = window.outer_position() else {
-                continue;
-            };
-            let Ok(scale) = window.scale_factor() else {
-                continue;
-            };
+            thread::sleep(Duration::from_millis(16));
             let mut cursor = POINT::default();
             if unsafe { GetCursorPos(&mut cursor) }.is_err() {
                 continue;
@@ -537,16 +536,18 @@ fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<Inter
                     })
                 })
                 .unwrap_or(false);
-            let next_ignored = !inside;
-            if next_ignored == candidate {
-                stable_samples = stable_samples.saturating_add(1);
+            if inside {
+                outside_samples = 0;
+                if ignored {
+                    let _ = window.set_ignore_cursor_events(false);
+                    ignored = false;
+                }
             } else {
-                candidate = next_ignored;
-                stable_samples = 1;
-            }
-            if stable_samples >= 3 && candidate != ignored {
-                let _ = window.set_ignore_cursor_events(candidate);
-                ignored = candidate;
+                outside_samples = outside_samples.saturating_add(1);
+                if outside_samples >= 5 && !ignored {
+                    let _ = window.set_ignore_cursor_events(true);
+                    ignored = true;
+                }
             }
         }
     });
