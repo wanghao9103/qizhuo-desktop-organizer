@@ -539,17 +539,24 @@ pub fn run() {
             register_desktop_context_menu();
             start_command_listener(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
-                if let (Ok(Some(monitor)), Ok(window_size)) =
-                    (window.current_monitor(), window.outer_size())
-                {
+                if let Ok(Some(monitor)) = window.current_monitor() {
                     let monitor_position = monitor.position();
                     let monitor_size = monitor.size();
+                    let _ = window.set_size(tauri::PhysicalSize::new(
+                        1180_u32.min(monitor_size.width),
+                        monitor_size.height,
+                    ));
+                    let window_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(
+                        1180_u32.min(monitor_size.width),
+                        monitor_size.height,
+                    ));
                     let x = monitor_position.x + monitor_size.width as i32
                         - window_size.width as i32
                         - 18;
-                    let y = monitor_position.y
-                        + ((monitor_size.height.saturating_sub(window_size.height)) / 2) as i32;
-                    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                    let _ = window.set_position(tauri::PhysicalPosition::new(
+                        x.max(monitor_position.x),
+                        monitor_position.y,
+                    ));
                 }
             }
             let show = MenuItem::with_id(app, "show", "显示栖桌", true, None::<&str>)?;
