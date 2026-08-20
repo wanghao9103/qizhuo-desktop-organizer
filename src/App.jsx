@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { FiBriefcase, FiChevronLeft, FiChevronRight, FiFileText, FiFolder, FiGrid, FiMoreHorizontal, FiPlus, FiRefreshCw, FiSearch, FiTool, FiX } from "react-icons/fi";
+import { FiBriefcase, FiChevronLeft, FiChevronRight, FiFileText, FiFolder, FiGrid, FiMoreHorizontal, FiMove, FiPlus, FiRefreshCw, FiSearch, FiTool, FiX } from "react-icons/fi";
 import { LuGamepad2, LuPalette } from "react-icons/lu";
 import { FaEdge } from "react-icons/fa6";
 import { SiFigma, SiGooglechrome, SiNotion } from "react-icons/si";
@@ -67,6 +67,10 @@ function useDraggablePosition(storageKey) {
   return {
     dragStyle: position ? { left: position.left, top: position.top, right: "auto", transform: "none" } : undefined,
     startDrag,
+    resetPosition: () => {
+      setPosition(null);
+      localStorage.removeItem(storageKey);
+    },
   };
 }
 
@@ -95,6 +99,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [railAtTop, setRailAtTop] = useState(() => localStorage.getItem("qizhuo-rail-layout") === "top");
   const folderDrag = useDraggablePosition("qizhuo-folder-position");
   const railDrag = useDraggablePosition("qizhuo-rail-position");
   const isTauri = Boolean(window.__TAURI_INTERNALS__);
@@ -139,6 +144,12 @@ export function App() {
     const next = { id: `custom-${Date.now()}`, name, count: 0, color, icon: FiFolder };
     setCategories((items) => [...items, next]); setActiveId(next.id); setAdding(false); setCollapsed(false); setNotice(`已创建“${name}”`); window.setTimeout(() => setNotice(""), 2200);
   }
+  function toggleRailLayout() {
+    const next = !railAtTop;
+    setRailAtTop(next);
+    railDrag.resetPosition();
+    localStorage.setItem("qizhuo-rail-layout", next ? "top" : "side");
+  }
   return <main className="desktop-shell">
     <div className="brand-note"><FiGrid /><span>栖桌正在托盘运行</span></div>
     {!collapsed && active && <section className="folder-panel" style={folderDrag.dragStyle} aria-label={`${displayedName}内容`}>
@@ -155,9 +166,9 @@ export function App() {
         }} title={target ? `${name}\n双击打开 · 右键显示系统菜单` : name}>{Icon ? <Icon style={{ color }} /> : <img src={icon} alt="" />}<span>{name}</span></button>;
       })}</div> : <button className="empty-folder"><FiPlus /><span>将应用拖到这里</span></button>}
     </section>}
-    <aside className={collapsed ? "category-rail collapsed" : "category-rail"} style={collapsed ? undefined : railDrag.dragStyle} aria-label="分类文件夹">
+    <aside className={`${collapsed ? "category-rail collapsed" : "category-rail"}${railAtTop && !collapsed ? " top-layout" : ""}`} style={collapsed ? undefined : railDrag.dragStyle} aria-label="分类文件夹">
       {collapsed ? <button className="edge-tab" onClick={() => setCollapsed(false)} aria-label="展开栖桌"><span>栖桌</span><FiChevronLeft /></button> : <>
-        <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
+        <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={toggleRailLayout} aria-label={railAtTop ? "切换到右侧布局" : "切换到顶部布局"} title={railAtTop ? "切换到右侧" : "切换到顶部"}><FiMove /></button><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
         {searchOpen && <label className="global-search"><FiSearch /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索所有软件" /><button onClick={() => { setQuery(""); setSearchOpen(false); }} aria-label="关闭搜索"><FiX /></button></label>}
         <div className="category-list">{categories.map(({ id, name, count, color, icon: Icon }) => <button key={id} className={activeId === id ? "category-row active" : "category-row"} onClick={() => setActiveId(id)} style={{ "--accent": color }}><Icon /><span>{name}</span><small>{count}</small><FiChevronLeft className="open-arrow" /></button>)}</div>
         <button className="add-category" onClick={() => setAdding(true)}><FiPlus /><span>新增分类</span></button>
