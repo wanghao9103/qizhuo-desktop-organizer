@@ -130,14 +130,23 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
-    const frame = requestAnimationFrame(() => {
-      const regions = [...document.querySelectorAll(".folder-panel, .category-rail, .new-folder")].map((element) => {
+    const elements = [...document.querySelectorAll(".folder-panel, .category-rail, .new-folder")];
+    const updateRegions = () => {
+      const regions = elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
       });
       invoke("set_interactive_regions", { regions }).catch(() => {});
-    });
-    return () => cancelAnimationFrame(frame);
+    };
+    const frame = requestAnimationFrame(updateRegions);
+    const settle = window.setTimeout(updateRegions, 260);
+    const observer = new ResizeObserver(updateRegions);
+    elements.forEach((element) => observer.observe(element));
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+      observer.disconnect();
+    };
   });
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
