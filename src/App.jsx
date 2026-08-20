@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FiBriefcase, FiChevronLeft, FiChevronRight, FiFileText, FiFolder, FiGrid, FiMoreHorizontal, FiMove, FiPlus, FiRefreshCw, FiSearch, FiTool, FiX } from "react-icons/fi";
@@ -110,7 +110,6 @@ export function App() {
   const [scanning, setScanning] = useState(false);
   const [railAtTop, setRailAtTop] = useState(() => localStorage.getItem("qizhuo-rail-layout") === "top");
   const [draggingCategory, setDraggingCategory] = useState(null);
-  const collapseLock = useRef(false);
   const folderDrag = useDraggablePosition("qizhuo-folder-position");
   const railDrag = useDraggablePosition("qizhuo-rail-position");
   const isTauri = Boolean(window.__TAURI_INTERNALS__);
@@ -189,12 +188,6 @@ export function App() {
     railDrag.resetPosition();
     localStorage.setItem("qizhuo-rail-layout", next ? "top" : "side");
   }
-  function changeCollapsed(next) {
-    if (collapseLock.current || next === collapsed) return;
-    collapseLock.current = true;
-    setCollapsed(next);
-    window.setTimeout(() => { collapseLock.current = false; }, 280);
-  }
   return <main className="desktop-shell">
     <div className="brand-note"><FiGrid /><span>栖桌正在托盘运行</span></div>
     {!collapsed && active && <section className="folder-panel" style={folderDrag.dragStyle} aria-label={`${displayedName}内容`}>
@@ -212,8 +205,8 @@ export function App() {
       })}</div> : <button className="empty-folder"><FiPlus /><span>将应用拖到这里</span></button>}
     </section>}
     <aside className={`${collapsed ? "category-rail collapsed" : "category-rail"}${railAtTop && !collapsed ? " top-layout" : ""}`} style={collapsed ? undefined : railDrag.dragStyle} aria-label="分类文件夹">
-      {collapsed ? <button className="edge-tab" onClick={() => changeCollapsed(false)} aria-label="展开栖桌"><span>栖桌</span><FiChevronLeft /></button> : <>
-        <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={toggleRailLayout} aria-label={railAtTop ? "切换到右侧布局" : "切换到顶部布局"} title={railAtTop ? "切换到右侧" : "切换到顶部"}><FiMove /></button><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => changeCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
+      {collapsed ? <button className="edge-tab" onClick={() => setCollapsed(false)} aria-label="展开栖桌"><span>栖桌</span><FiChevronLeft /></button> : <>
+        <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={toggleRailLayout} aria-label={railAtTop ? "切换到右侧布局" : "切换到顶部布局"} title={railAtTop ? "切换到右侧" : "切换到顶部"}><FiMove /></button><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
         {searchOpen && <label className="global-search"><FiSearch /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索所有软件" /><button onClick={() => { setQuery(""); setSearchOpen(false); }} aria-label="关闭搜索"><FiX /></button></label>}
         <div className="category-list">{categories.map(({ id, name, count, color, icon: Icon }) => <button key={id} draggable className={`${activeId === id ? "category-row active" : "category-row"}${draggingCategory === id ? " dragging" : ""}`} onClick={() => setActiveId(id)} onDragStart={(event) => { setDraggingCategory(id); event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); moveCategory(id); setDraggingCategory(null); }} onDragEnd={() => setDraggingCategory(null)} style={{ "--accent": color }}><Icon /><span>{name}</span><small>{count}</small><FiChevronLeft className="open-arrow" /></button>)}</div>
         <button className="add-category" onClick={() => setAdding(true)}><FiPlus /><span>新增分类</span></button>
