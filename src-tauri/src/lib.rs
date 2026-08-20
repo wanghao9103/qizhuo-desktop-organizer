@@ -7,7 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{mpsc, Arc, Mutex},
+    sync::mpsc,
     thread,
     time::Duration,
 };
@@ -21,6 +21,7 @@ use windows::{
     core::{PCSTR, PCWSTR},
     Win32::{
         Foundation::{HWND, POINT},
+        Graphics::Gdi::{CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, RGN_OR},
         System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED},
         UI::{
             Shell::{
@@ -52,16 +53,34 @@ struct InteractiveRegion {
     height: f64,
 }
 
-struct InteractiveRegions(Arc<Mutex<Vec<InteractiveRegion>>>);
+#[cfg(target_os = "windows")]
+fn apply_window_region(window: &tauri::WebviewWindow, regions: &[InteractiveRegion]) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    unsafe {
+        let combined = CreateRectRgn(0, 0, 0, 0);
+        for region in regions {
+            let left = region.left.floor() as i32;
+            let top = region.top.floor() as i32;
+            let right = (region.left + region.width).ceil() as i32;
+            let bottom = (region.top + region.height).ceil() as i32;
+            let part = CreateRectRgn(left, top, right, bottom);
+            CombineRgn(Some(combined), Some(combined), Some(part), RGN_OR);
+            let _ = DeleteObject(HGDIOBJ(part.0));
+        }
+        if SetWindowRgn(hwnd, Some(combined), true) == 0 {
+            let _ = DeleteObject(HGDIOBJ(combined.0));
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_window_region(_window: &tauri::WebviewWindow, _regions: &[InteractiveRegion]) {}
 
 #[tauri::command]
-fn set_interactive_regions(
-    state: tauri::State<'_, InteractiveRegions>,
-    regions: Vec<InteractiveRegion>,
-) {
-    if let Ok(mut current) = state.0.lock() {
-        *current = regions;
-    }
+fn set_interactive_regions(window: tauri::WebviewWindow, regions: Vec<InteractiveRegion>) {
+    apply_window_region(&window, &regions);
 }
 
 #[tauri::command]
@@ -503,73 +522,6 @@ fn start_command_listener(app: tauri::AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
-    thread::spawn(move || {
-        let Some(window) = app.get_webview_window("main") else {
-            return;
-        };
-        let Ok(position) = window.outer_position() else {
-            return;
-        };
-        let Ok(scale) = window.scale_factor() else {
-            return;
-        };
-        let Ok(size) = window.inner_size() else {
-            return;
-        };
-        let logical_width = size.width as f64 / scale;
-        let logical_height = size.height as f64 / scale;
-        let mut ignored = false;
-        let mut outside_samples = 0_u8;
-        loop {
-            thread::sleep(Duration::from_millis(16));
-            let mut cursor = POINT::default();
-            if unsafe { GetCursorPos(&mut cursor) }.is_err() {
-                continue;
-            }
-            let x = (cursor.x - position.x) as f64 / scale;
-            let y = (cursor.y - position.y) as f64 / scale;
-            // The collapsed tab always lives at the center of the right edge. Keep a
-            // native fallback hotspot for it so a delayed DOM-region update can never
-            // leave the only expand control behind a click-through window.
-            let inside_edge_tab = x >= logical_width - 64.0
-                && y >= logical_height / 2.0 - 110.0
-                && y <= logical_height / 2.0 + 110.0;
-            let inside = inside_edge_tab
-                || regions
-                    .lock()
-                    .map(|items| {
-                        items.iter().any(|region| {
-                            const PADDING: f64 = 10.0;
-                            x >= region.left - PADDING
-                                && x <= region.left + region.width + PADDING
-                                && y >= region.top - PADDING
-                                && y <= region.top + region.height + PADDING
-                        })
-                    })
-                    .unwrap_or(false);
-            if inside {
-                outside_samples = 0;
-                if ignored {
-                    let _ = window.set_ignore_cursor_events(false);
-                    ignored = false;
-                }
-            } else {
-                outside_samples = outside_samples.saturating_add(1);
-                if outside_samples >= 5 && !ignored {
-                    let _ = window.set_ignore_cursor_events(true);
-                    ignored = true;
-                }
-            }
-        }
-    });
-}
-
-#[cfg(not(target_os = "windows"))]
-fn start_interaction_watcher(_app: tauri::AppHandle, _regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
-}
-
-#[cfg(target_os = "windows")]
 fn add_registry_value(key: &str, name: Option<&str>, value: &str) {
     let mut command = Command::new("reg.exe");
     command.args(["add", key]);
@@ -623,9 +575,6 @@ pub fn run() {
             set_interactive_regions
         ])
         .setup(|app| {
-            let interactive_regions = Arc::new(Mutex::new(Vec::new()));
-            app.manage(InteractiveRegions(interactive_regions.clone()));
-            start_interaction_watcher(app.handle().clone(), interactive_regions);
             start_restore_watchdog();
             register_desktop_context_menu();
             start_command_listener(app.handle().clone());
