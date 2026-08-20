@@ -1,6 +1,6 @@
 [package]
 name = "qizhuo"
-version = "1.0.0"
+version = "1.0.1"
 description = "A quiet desktop organizer"
 authors = ["Qizhuo"]
 edition = "2021"
