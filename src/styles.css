@@ -60,7 +60,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #63a0ff; outline-
 .edge-tab span { writing-mode: vertical-rl; letter-spacing: .18em; font-size: 14px; color: rgba(241,246,253,.8); }
 .edge-tab svg { color: #5599ff; }
 
-.modal-backdrop { position: fixed; inset: 0; z-index: 5; background: rgba(2,7,14,.56); display: grid; place-items: center; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 5; background: transparent; display: grid; place-items: center; }
 .new-folder { width: 376px; border-radius: 18px; padding: 22px; }
 .new-folder header { display: flex; justify-content: space-between; margin-bottom: 24px; }
 .new-folder header div { display: grid; gap: 5px; }
