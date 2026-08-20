@@ -36,6 +36,40 @@ function inferCategory(item) {
   return "work";
 }
 
+function useDraggablePosition(storageKey) {
+  const [position, setPosition] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey)) ?? null; } catch { return null; }
+  });
+  function startDrag(event) {
+    if (event.button !== 0 || event.target.closest("button, input")) return;
+    const surface = event.currentTarget.parentElement;
+    const rect = surface.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const offsetY = event.clientY - rect.top;
+    document.body.classList.add("dragging-surface");
+    const move = (nextEvent) => {
+      const left = Math.max(0, Math.min(window.innerWidth - rect.width, nextEvent.clientX - offsetX));
+      const top = Math.max(0, Math.min(window.innerHeight - rect.height, nextEvent.clientY - offsetY));
+      setPosition({ left, top });
+    };
+    const finish = (nextEvent) => {
+      move(nextEvent);
+      document.body.classList.remove("dragging-surface");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      const left = Math.max(0, Math.min(window.innerWidth - rect.width, nextEvent.clientX - offsetX));
+      const top = Math.max(0, Math.min(window.innerHeight - rect.height, nextEvent.clientY - offsetY));
+      localStorage.setItem(storageKey, JSON.stringify({ left, top }));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish, { once: true });
+  }
+  return {
+    dragStyle: position ? { left: position.left, top: position.top, right: "auto", transform: "none" } : undefined,
+    startDrag,
+  };
+}
+
 function AddCategory({ onClose, onAdd }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4f8cff");
@@ -61,6 +95,8 @@ export function App() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const folderDrag = useDraggablePosition("qizhuo-folder-position");
+  const railDrag = useDraggablePosition("qizhuo-rail-position");
   const isTauri = Boolean(window.__TAURI_INTERNALS__);
   function scanNow(showSuccess = false) {
     if (!isTauri) return;
@@ -105,8 +141,8 @@ export function App() {
   }
   return <main className="desktop-shell">
     <div className="brand-note"><FiGrid /><span>栖桌正在托盘运行</span></div>
-    {!collapsed && active && <section className="folder-panel" aria-label={`${displayedName}内容`}>
-      <header><div><strong style={{ color: displayedColor }}>{displayedName}</strong><span>{visibleApps.length} 个项目</span></div><button className="icon-button" aria-label="更多操作"><FiMoreHorizontal /></button></header>
+    {!collapsed && active && <section className="folder-panel" style={folderDrag.dragStyle} aria-label={`${displayedName}内容`}>
+      <header className="drag-handle" onPointerDown={folderDrag.startDrag}><div><strong style={{ color: displayedColor }}>{displayedName}</strong><span>{visibleApps.length} 个项目</span></div><button className="icon-button" aria-label="更多操作"><FiMoreHorizontal /></button></header>
       {visibleApps.length ? <div className="app-grid">{visibleApps.map(({ name, icon, target, source, color, kind }) => {
         const Icon = typeof icon === "function" ? icon : (kind === "folder" ? FiFolder : (kind === "file" && !icon ? FiFileText : null));
         return <button className="app-tile" key={`${name}-${source ?? target ?? "demo"}`} onDoubleClick={() => target && invoke("open_item", { target })} onContextMenu={(event) => {
@@ -119,9 +155,9 @@ export function App() {
         }} title={target ? `${name}\n双击打开 · 右键显示系统菜单` : name}>{Icon ? <Icon style={{ color }} /> : <img src={icon} alt="" />}<span>{name}</span></button>;
       })}</div> : <button className="empty-folder"><FiPlus /><span>将应用拖到这里</span></button>}
     </section>}
-    <aside className={collapsed ? "category-rail collapsed" : "category-rail"} aria-label="分类文件夹">
+    <aside className={collapsed ? "category-rail collapsed" : "category-rail"} style={collapsed ? undefined : railDrag.dragStyle} aria-label="分类文件夹">
       {collapsed ? <button className="edge-tab" onClick={() => setCollapsed(false)} aria-label="展开栖桌"><span>栖桌</span><FiChevronLeft /></button> : <>
-        <div className="rail-head"><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
+        <div className="rail-head drag-handle" onPointerDown={railDrag.startDrag}><span>分类</span><div className="rail-actions"><button className="icon-button" onClick={() => setSearchOpen((value) => !value)} aria-label="全局搜索"><FiSearch /></button><button className={scanning ? "icon-button spinning" : "icon-button"} onClick={() => scanNow(true)} aria-label="立即整理"><FiRefreshCw /></button><button className="icon-button" onClick={() => setCollapsed(true)} aria-label="收起到屏幕边缘"><FiChevronRight /></button></div></div>
         {searchOpen && <label className="global-search"><FiSearch /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索所有软件" /><button onClick={() => { setQuery(""); setSearchOpen(false); }} aria-label="关闭搜索"><FiX /></button></label>}
         <div className="category-list">{categories.map(({ id, name, count, color, icon: Icon }) => <button key={id} className={activeId === id ? "category-row active" : "category-row"} onClick={() => setActiveId(id)} style={{ "--accent": color }}><Icon /><span>{name}</span><small>{count}</small><FiChevronLeft className="open-arrow" /></button>)}</div>
         <button className="add-category" onClick={() => setAdding(true)}><FiPlus /><span>新增分类</span></button>
@@ -131,3 +167,4 @@ export function App() {
     {adding && <AddCategory onClose={() => setAdding(false)} onAdd={addCategory} />}
   </main>;
 }
+
