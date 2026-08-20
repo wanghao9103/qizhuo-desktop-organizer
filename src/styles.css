@@ -50,6 +50,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #63a0ff; outline-
 .category-row small { font-size: 13px; }
 .category-row .open-arrow { opacity: 0; }
 .category-row:hover { background: rgba(255,255,255,.06); color: rgba(245,248,255,.88); }
+.category-row.dragging { opacity: .38; }
 .category-row.active { background: rgba(58,112,191,.18); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: #f4f7fc; box-shadow: inset 3px 0 var(--accent), 0 9px 30px rgba(0,0,0,.16); }
 .category-row.active > svg:first-child { color: var(--accent); }
 .category-row.active .open-arrow { opacity: .75; }
