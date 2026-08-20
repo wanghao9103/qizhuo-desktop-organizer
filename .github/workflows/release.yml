@@ -42,5 +42,13 @@ jobs:
           $tag = "v$env:RELEASE_VERSION"
           $installer = Get-ChildItem -LiteralPath "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
           if (-not $installer) { throw "NSIS installer was not generated" }
-          gh release create $tag $installer.FullName --target "${{ github.sha }}" --title "栖桌 $tag" --generate-notes
+          $releaseAsset = Join-Path $env:RUNNER_TEMP "Qizhuo_${env:RELEASE_VERSION}_x64-setup.exe"
+          Copy-Item -LiteralPath $installer.FullName -Destination $releaseAsset
+          if (gh release view $tag 2>$null) {
+            $legacyAsset = "_${env:RELEASE_VERSION}_x64-setup.exe"
+            gh release delete-asset $tag $legacyAsset --yes 2>$null
+            gh release upload $tag $releaseAsset --clobber
+          } else {
+            gh release create $tag $releaseAsset --target "${{ github.sha }}" --title "栖桌 $tag" --generate-notes
+          }
 
