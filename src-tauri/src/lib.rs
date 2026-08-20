@@ -7,6 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::mpsc,
     thread,
     time::Duration,
 };
@@ -215,8 +216,13 @@ fn show_system_context_menu(app: tauri::AppHandle, target: String) -> Result<(),
             .hwnd()
             .map_err(|error| error.to_string())?;
         let hwnd_value = hwnd.0 as isize;
-        return thread::spawn(move || show_windows_shell_menu(hwnd_value, &path))
-            .join()
+        let (sender, receiver) = mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = sender.send(show_windows_shell_menu(hwnd_value, &path));
+        })
+        .map_err(|error| error.to_string())?;
+        return receiver
+            .recv()
             .map_err(|_| "系统菜单线程异常".to_string())?;
     }
 
@@ -396,6 +402,54 @@ foreach ($set in $sets) {
     managed_store_is_empty()
 }
 
+#[cfg(target_os = "windows")]
+fn start_restore_watchdog() {
+    let pid = std::process::id().to_string();
+    let script = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ownerPid = [int]$args[0]
+Wait-Process -Id $ownerPid -ErrorAction SilentlyContinue
+$root = Join-Path $env:LOCALAPPDATA 'Qizhuo\Shortcuts'
+$sets = @(
+  [pscustomobject]@{ Desktop = [Environment]::GetFolderPath('Desktop'); Store = (Join-Path $root 'User') },
+  [pscustomobject]@{ Desktop = [Environment]::GetFolderPath('CommonDesktopDirectory'); Store = (Join-Path $root 'Common') }
+)
+foreach ($set in $sets) {
+  Get-ChildItem -LiteralPath $set.Store -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    $destination = Join-Path $set.Desktop $_.Name
+    if (-not (Test-Path -LiteralPath $destination)) {
+      Move-Item -LiteralPath $_.FullName -Destination $destination -ErrorAction SilentlyContinue
+    }
+  }
+}
+"#;
+    let directory = qizhuo_data_dir();
+    if fs::create_dir_all(&directory).is_err() {
+        return;
+    }
+    let helper = directory.join("restore-watchdog.ps1");
+    if fs::write(&helper, script).is_err() {
+        return;
+    }
+    let mut command = Command::new("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+        &helper.to_string_lossy(),
+        &pid,
+    ]);
+    command.creation_flags(0x08000000);
+    let _ = command.spawn();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_restore_watchdog() {}
+
 fn start_command_listener(app: tauri::AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(180));
@@ -481,6 +535,7 @@ pub fn run() {
             show_system_context_menu
         ])
         .setup(|app| {
+            start_restore_watchdog();
             register_desktop_context_menu();
             start_command_listener(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
@@ -562,3 +617,4 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.set_focus();
     }
 }
+
