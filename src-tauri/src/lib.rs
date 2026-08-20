@@ -7,7 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::mpsc,
+    sync::{mpsc, Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -42,6 +42,26 @@ struct DesktopApp {
     source: String,
     icon: String,
     kind: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct InteractiveRegion {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+}
+
+struct InteractiveRegions(Arc<Mutex<Vec<InteractiveRegion>>>);
+
+#[tauri::command]
+fn set_interactive_regions(
+    state: tauri::State<'_, InteractiveRegions>,
+    regions: Vec<InteractiveRegion>,
+) {
+    if let Ok(mut current) = state.0.lock() {
+        *current = regions;
+    }
 }
 
 #[tauri::command]
@@ -483,6 +503,51 @@ fn start_command_listener(app: tauri::AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
+fn start_interaction_watcher(app: tauri::AppHandle, regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
+    thread::spawn(move || {
+        let mut ignored = false;
+        loop {
+            thread::sleep(Duration::from_millis(32));
+            let Some(window) = app.get_webview_window("main") else {
+                break;
+            };
+            let Ok(position) = window.outer_position() else {
+                continue;
+            };
+            let Ok(scale) = window.scale_factor() else {
+                continue;
+            };
+            let mut cursor = POINT::default();
+            if unsafe { GetCursorPos(&mut cursor) }.is_err() {
+                continue;
+            }
+            let x = (cursor.x - position.x) as f64 / scale;
+            let y = (cursor.y - position.y) as f64 / scale;
+            let inside = regions
+                .lock()
+                .map(|items| {
+                    items.iter().any(|region| {
+                        x >= region.left
+                            && x <= region.left + region.width
+                            && y >= region.top
+                            && y <= region.top + region.height
+                    })
+                })
+                .unwrap_or(false);
+            let next_ignored = !inside;
+            if next_ignored != ignored {
+                let _ = window.set_ignore_cursor_events(next_ignored);
+                ignored = next_ignored;
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_interaction_watcher(_app: tauri::AppHandle, _regions: Arc<Mutex<Vec<InteractiveRegion>>>) {
+}
+
+#[cfg(target_os = "windows")]
 fn add_registry_value(key: &str, name: Option<&str>, value: &str) {
     let mut command = Command::new("reg.exe");
     command.args(["add", key]);
@@ -532,9 +597,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_desktop_apps,
             open_item,
-            show_system_context_menu
+            show_system_context_menu,
+            set_interactive_regions
         ])
         .setup(|app| {
+            let interactive_regions = Arc::new(Mutex::new(Vec::new()));
+            app.manage(InteractiveRegions(interactive_regions.clone()));
+            start_interaction_watcher(app.handle().clone(), interactive_regions);
             start_restore_watchdog();
             register_desktop_context_menu();
             start_command_listener(app.handle().clone());
